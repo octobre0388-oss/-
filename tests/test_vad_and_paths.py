@@ -10,7 +10,6 @@ import pytest
 from transcribe_ja import paths, wavtools
 from transcribe_ja.config import VadConfig
 from transcribe_ja.errors import DiskSpaceError
-from transcribe_ja.segmap import Interval
 from transcribe_ja.vad import detect_speech_intervals, refine_intervals
 
 

@@ -24,11 +24,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
-import numpy as np
-
 from . import wavtools
 from .config import Config
-from .errors import InputFileNotFoundError, TranscribeJAError, UnsupportedFileError
+from .errors import InputFileNotFoundError, UnsupportedFileError
 from .ffmpeg_tools import Ffmpeg, MediaInfo, format_duration
 from .logging_setup import get_logger
 from .paths import ensure_free_space, ensure_path_usable, work_root

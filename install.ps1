@@ -200,12 +200,8 @@ if (Test-Path $VenvPython) {
     Write-Ok "作成しました: $VenvDir"
 }
 
-# src フォルダを import できるようにする（pip install せずに済ませる簡単な方法）
-$SitePackages = Join-Path $VenvDir 'Lib\site-packages'
-if (Test-Path $SitePackages) {
-    Set-Content -Path (Join-Path $SitePackages 'transcribe_ja.pth') -Value $SrcDir -Encoding ASCII
-    Write-Ok 'プログラム本体の場所を登録しました'
-}
+# ※ プログラム本体を import できるようにする処理は、
+#    ライブラリのインストール（手順3）の最後に行います。
 
 # ===================================================================
 #  3. ライブラリを入れる
@@ -259,6 +255,39 @@ if ($SkipLibraries) {
 "@
     }
     Write-Ok 'ライブラリの準備ができました'
+}
+
+# --- プログラム本体を import できるようにする ---
+# pip の編集可能インストールを使う。
+# 単純に .pth ファイルへパスを書く方法もあるが、.pth は Python のバージョンに
+# よって想定する文字コードが異なり、ユーザー名に日本語が含まれるパス
+# （例: C:\Users\山田\TranscribeJA）で読み込みに失敗することがある。
+# pip の方式は経路情報を UTF-8 の .py に持つため、その問題が起きない。
+Write-Info 'プログラム本体を登録しています'
+& $VenvPython -m pip install -e $Root --no-deps --quiet
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn2 '通常の方法で登録できなかったため、簡易な方法に切り替えます'
+    $SitePackages = Join-Path $VenvDir 'Lib\site-packages'
+    if (Test-Path $SitePackages) {
+        # 非 ASCII 文字を含むパスではこの方法が使えないことがある
+        if ($SrcDir -match '[^\u0000-\u007F]') {
+            Exit-WithError `
+                "フォルダのパスに日本語が含まれているため、登録に失敗しました。`n$SrcDir" `
+                @"
+このツールのフォルダを、英数字だけのパスに移してからやり直してください。
+
+  例) C:\TranscribeJA
+      C:\Users\<ユーザー名>\Documents\TranscribeJA
+
+※ 処理する音声・動画ファイルのほうは、日本語のファイル名・フォルダ名でも
+   問題ありません。
+"@
+        }
+        Set-Content -Path (Join-Path $SitePackages 'transcribe_ja.pth') -Value $SrcDir -Encoding ASCII
+        Write-Ok 'プログラム本体の場所を登録しました'
+    }
+} else {
+    Write-Ok 'プログラム本体を登録しました'
 }
 
 # ===================================================================
@@ -438,8 +467,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok '正常に起動できました'
 
-# 設定ファイルを既定値で作っておく（初回起動を待たずに編集できるように）
-& $VenvPython -m transcribe_ja --open-config 2>$null | Out-Null
+# 設定ファイルと判定辞書を既定値で作っておく（初回起動を待たずに編集できるように）。
+# --open-config はメモ帳が開いてしまうので、ここでは作成だけを行う。
+& $VenvPython -c "from transcribe_ja.config import load; load()" 2>$null | Out-Null
+if ($LASTEXITCODE -eq 0) { Write-Ok '設定ファイルを作成しました' }
 
 Write-Host ''
 Write-Host '===================================================================' -ForegroundColor Green

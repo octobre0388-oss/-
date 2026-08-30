@@ -21,7 +21,6 @@ from transcribe_ja.config import Config
 from transcribe_ja.ffmpeg_tools import AudioStream, MediaInfo
 from transcribe_ja.segmap import SegmentMap
 from transcribe_ja.transcribe import TranscriptSegment
-from transcribe_ja.writers import OutputSegment
 
 #: テスト用の音声: 無音 3 秒 → 音 5 秒 → 無音 4 秒 → 音 5 秒（合計 17 秒）
 SILENCE_1 = 3.0

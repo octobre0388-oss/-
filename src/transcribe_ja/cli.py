@@ -145,15 +145,46 @@ def process_all(
     return processed, failures, cancelled, last_dir
 
 
-def _run_with_gui(runner: QueueRunner, config: Config) -> int:
-    """進捗ウィンドウを出しながら処理する。"""
+def _notify_result(
+    config: Config,
+    processed: int,
+    failures: Sequence[tuple[Path, str]],
+    cancelled: bool,
+    last_dir: Path | None,
+    elapsed: float,
+) -> str:
+    """結果をトースト通知で知らせ、画面に出す用の要約文を返す。"""
+    from .gui.notify import notify_failure, notify_success
+
+    summary = _summarize(processed, failures, cancelled)
+    if not config.advanced.show_notification:
+        return summary
+
+    if failures:
+        notify_failure(summary)
+    elif processed and not cancelled:
+        notify_success(processed, last_dir or Path.cwd(), elapsed)
+    return summary
+
+
+def _run_with_gui(runner, config: Config) -> int:
+    """進捗ウィンドウを出しながら処理する。
+
+    tkinter が使えない環境では、コンソール表示に切り替える
+    （pythonw から起動されていると画面には何も出ないが、
+    ログと通知は残るので「無反応で終わる」状態を避けられる）。
+    """
     import threading
 
-    from .gui.notify import notify_failure, notify_success
     from .gui.progress_window import ProgressWindow
 
     reporter = ProgressReporter(None)
-    window = ProgressWindow(on_cancel=reporter.cancel)
+    try:
+        window = ProgressWindow(on_cancel=reporter.cancel)
+    except Exception as exc:
+        logger.warning("進捗ウィンドウを開けなかったため、画面なしで処理します: %s", exc)
+        return _run_console(runner, config)
+
     reporter.set_callback(window.post)
 
     outcome: dict[str, object] = {}
@@ -179,7 +210,10 @@ def _run_with_gui(runner: QueueRunner, config: Config) -> int:
 
     fatal = outcome.get("fatal")
     if isinstance(fatal, str):
-        notify_failure(fatal)
+        if config.advanced.show_notification:
+            from .gui.notify import notify_failure
+
+            notify_failure(fatal)
         _show_fatal(fatal, use_gui=True)
         return 1
 
@@ -188,29 +222,33 @@ def _run_with_gui(runner: QueueRunner, config: Config) -> int:
         return 1
     processed, failures, cancelled, last_dir = result
 
-    summary = _summarize(processed, failures, cancelled)
+    summary = _notify_result(
+        config, processed, failures, cancelled, last_dir, time.time() - started
+    )
     if failures:
-        notify_failure(summary)
         _show_fatal(summary, use_gui=True)
-    elif processed and not cancelled:
-        notify_success(processed, last_dir or Path.cwd(), time.time() - started)
     return 0 if not failures else 1
 
 
-def _run_console(runner: QueueRunner, config: Config) -> int:
+def _run_console(runner, config: Config) -> int:
     """コンソールに進捗を出しながら処理する（動作確認・自動化用）。"""
     reporter = ProgressReporter(ConsoleProgress().update)
     started = time.time()
     try:
-        processed, failures, cancelled, _ = process_all(
+        processed, failures, cancelled, last_dir = process_all(
             runner.iter_batches(), config, reporter
         )
     except TranscribeJAError as exc:
+        if config.advanced.show_notification:
+            from .gui.notify import notify_failure
+
+            notify_failure(exc.user_message())
         _show_fatal(exc.user_message(), use_gui=False)
         return 1
 
     elapsed = time.time() - started
-    print(_summarize(processed, failures, cancelled))
+    summary = _notify_result(config, processed, failures, cancelled, last_dir, elapsed)
+    print(summary)
     print(f"所要時間: {elapsed:.1f} 秒")
     return 0 if not failures else 1
 

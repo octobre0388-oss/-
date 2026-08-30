@@ -76,7 +76,6 @@ def _remove_boundary(text: str, words: list[str]) -> str:
 
 def _remove_sentence_head(text: str, words: list[str]) -> str:
     """文頭にあるときだけ消す語を除去する。"""
-    delimiters = re.escape(_DELIMITERS)
     for word in sorted(words, key=len, reverse=True):
         if not word:
             continue
