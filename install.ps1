@@ -23,6 +23,10 @@
     .\install.ps1 -SkipRegister
         右クリックメニューへの登録だけを行いません（動作確認用）。
 
+.EXAMPLE
+    .\install.ps1 -PythonPath "C:\Users\taro\AppData\Local\Programs\Python\Python312\python.exe"
+        使う Python を手動で指定します。
+
 .NOTES
     実行がブロックされる場合は、PowerShell で次を実行してください。
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -34,7 +38,8 @@ param(
     [switch]$SkipRegister,    # 右クリックメニューの登録を飛ばす
     [switch]$SkipLibraries,   # ライブラリのインストールを飛ばす
     [switch]$Cpu,             # GPU があっても CPU 版を入れる
-    [switch]$Gpu              # 自動判定に関わらず CUDA 版を入れる
+    [switch]$Gpu,             # 自動判定に関わらず CUDA 版を入れる
+    [string]$PythonPath = ''  # 使う python.exe を手動で指定する
 )
 
 $ErrorActionPreference = 'Stop'
@@ -196,6 +201,19 @@ function Get-PythonCandidates {
     return @($found.Keys)
 }
 
+# 使う Python の優先順位。
+# 新しすぎるバージョンは torch や faster-whisper の対応が追いついていないことが
+# 多いため、実績のある版を先に選ぶ。ここに無い版は「新しいものほど後回し」。
+$PreferredVersions = @('3.12', '3.13', '3.11')
+
+function Get-VersionRank {
+    param([version]$Version)
+    $key = "$($Version.Major).$($Version.Minor)"
+    $index = [array]::IndexOf($PreferredVersions, $key)
+    if ($index -ge 0) { return $index }
+    return 10 + $Version.Minor
+}
+
 function Test-PythonVersion {
     param([string]$Invocation)
     try {
@@ -205,14 +223,22 @@ function Test-PythonVersion {
             $script:StoreStubFound = $true
             return $null
         }
-        $script = 'import sys;print("%d.%d"%sys.version_info[:2])'
-        # $args は PowerShell の自動変数なので、別名を使う
-        $cmdArgs = if ($parts.Count -gt 1) { @($parts[1], '-c', $script) } else { @('-c', $script) }
+
+        # 【重要】ここで python -c "..." を使ってはいけない。
+        # Windows PowerShell 5.1 は、ネイティブコマンドへ渡す引数の中の
+        # ダブルクォートをエスケープしないため、
+        #     -c "import sys;print("%d.%d"%sys.version_info[:2])"
+        # が Python 側では
+        #     import sys;print(%d.%d%sys.version_info[:2])
+        # として受け取られ、必ず構文エラーになる。
+        # 引数にクォートを含まない -V を使えばこの問題を避けられる。
+        $cmdArgs = if ($parts.Count -gt 1) { @($parts[1], '-V') } else { @('-V') }
         $out = & $exe @cmdArgs 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $out) { return $null }
-        # 出力が複数行になることがあるので、最後の行だけを見る
-        $line = (@($out) | Where-Object { "$_".Trim() } | Select-Object -Last 1)
-        $version = [version]("$line".Trim())
+
+        # 「Python 3.12.1」のような出力から数字を取り出す
+        if ("$out" -notmatch 'Python\s+(\d+)\.(\d+)') { return $null }
+        $version = [version]"$($matches[1]).$($matches[2])"
         if ($version -ge [version]'3.11') { return $version }
         return $null
     } catch {
@@ -223,14 +249,37 @@ function Test-PythonVersion {
 $PythonCommand = $null
 $PythonVersion = $null
 $Checked = @()
+$Usable = @()
 
-foreach ($candidate in Get-PythonCandidates) {
-    $Checked += $candidate
-    $v = Test-PythonVersion $candidate
-    if ($v) {
-        $PythonCommand = $candidate
-        $PythonVersion = $v
-        break
+if ($PythonPath) {
+    # 手動で指定された Python を最優先する
+    $v = Test-PythonVersion $PythonPath
+    if (-not $v) {
+        Exit-WithError "-PythonPath で指定された Python が使えませんでした。`n$PythonPath" `
+            "3.11 以上の python.exe のパスを指定してください。"
+    }
+    $PythonCommand = $PythonPath
+    $PythonVersion = $v
+} else {
+    # 候補をすべて調べ、優先順位のいちばん高いものを選ぶ。
+    # 最初に見つかったものを使うと、既定が 3.14 のような新しい版だった場合に
+    # ライブラリが入らないことがある。
+    foreach ($candidate in Get-PythonCandidates) {
+        $Checked += $candidate
+        $v = Test-PythonVersion $candidate
+        if ($v) {
+            $Usable += [pscustomobject]@{
+                Invocation = $candidate
+                Version    = $v
+                Rank       = (Get-VersionRank $v)
+            }
+        }
+    }
+
+    $best = $Usable | Sort-Object Rank, @{Expression = 'Version'; Descending = $false } | Select-Object -First 1
+    if ($best) {
+        $PythonCommand = $best.Invocation
+        $PythonVersion = $best.Version
     }
 }
 
@@ -273,12 +322,23 @@ Python をインストールしてください。おすすめは Microsoft Store
       ★「Add python.exe to PATH」に必ずチェックを入れてから★
       「Install Now」をクリック
 $storeNote
+すでに Python を入れているのにこのメッセージが出る場合は、
+python.exe の場所を直接指定して実行できます。
+
+    .\install.ps1 -PythonPath "C:\Users\<名前>\AppData\Local\Programs\Python\Python312\python.exe"
+
 インストールが終わったら、PowerShell を開き直してから
 install.ps1 をもう一度実行してください。
 （開いたままだと、新しくインストールした Python が認識されません）
 "@
 }
+
 Write-Ok "Python $PythonVersion を使います（$PythonCommand）"
+if ($Usable.Count -gt 1) {
+    $others = ($Usable | Where-Object { $_.Invocation -ne $PythonCommand } |
+               ForEach-Object { "$($_.Version)" } | Select-Object -Unique) -join ', '
+    if ($others) { Write-Info "他に見つかった版: $others（動作実績を優先して選びました）" }
+}
 
 # ===================================================================
 #  2. 仮想環境を作る

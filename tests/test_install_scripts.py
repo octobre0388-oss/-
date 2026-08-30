@@ -115,3 +115,62 @@ def test_アイコンが用意されている():
 
 def test_インストールはアイコンを登録する():
     assert "Set-ItemProperty -Path $shellKey -Name 'Icon'" in _read(INSTALL)
+
+
+# --- PowerShell 特有の落とし穴に対する回帰テスト -----------------------------
+
+
+def _code_lines(text: str) -> list[str]:
+    """コメント行と説明用の here-string を除いた、実際に動く行だけを返す。"""
+    lines = []
+    in_help = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("<#"):
+            in_help = True
+        if in_help:
+            if stripped.endswith("#>"):
+                in_help = False
+            continue
+        if stripped.startswith("#") or not stripped:
+            continue
+        lines.append(line)
+    return lines
+
+
+def test_ネイティブコマンドの引数にダブルクォートを埋め込まない():
+    """Windows PowerShell 5.1 は、外部コマンドへ渡す引数の中の
+    ダブルクォートをエスケープしない。
+
+        -c "import sys;print("...")"   → Python には import sys;print(...) が届く
+
+    そのため引数の中にダブルクォートを含めると、必ず壊れた形で渡される。
+    （この不具合で Python の検出が常に失敗していた）
+    """
+    for line in _code_lines(_read(INSTALL)) + _code_lines(_read(UNINSTALL)):
+        if " -c " not in line:
+            continue
+        after = line.split(" -c ", 1)[1]
+        assert after.count('"') <= 2, (
+            "外部コマンドの引数にダブルクォートが埋め込まれています。\n"
+            f"  {line.strip()}"
+        )
+
+
+def test_版数の判定はVオプションを使う():
+    """引数にクォートを含まない -V なら、上記の問題を避けられる。"""
+    text = _read(INSTALL)
+    assert "@($parts[1], '-V')" in text
+    assert "Python\\s+(\\d+)\\.(\\d+)" in text
+
+
+def test_新しすぎるPythonより実績のある版を優先する():
+    """既定が 3.14 のような新しい版でも、torch が入る版を選ぶこと。"""
+    text = _read(INSTALL)
+    assert "$PreferredVersions = @('3.12', '3.13', '3.11')" in text
+    assert "Get-VersionRank" in text
+
+
+def test_Pythonを手動指定できる():
+    """自動検出が外れたときの逃げ道があること。"""
+    assert "[string]$PythonPath" in _read(INSTALL)

@@ -470,6 +470,34 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force; .\install.ps1
 </details>
 
 <details>
+<summary><b>Python は入っているのに「見つかりません」と言われる</b></summary>
+
+`install.ps1` は次の 4 通りで Python を探します。
+
+1. `py` ランチャーが把握している一覧（`py --list-paths` で確認できます）
+2. PATH 上の `python` / `python3`
+3. レジストリ（公式インストーラが登録します）
+4. `%LOCALAPPDATA%\Programs\Python\Python3*` などのよくある場所
+
+それでも見つからない場合は、使う Python を直接指定できます。
+
+```powershell
+.\install.ps1 -PythonPath "C:\Users\<ユーザー名>\AppData\Local\Programs\Python\Python312\python.exe"
+```
+
+自分の Python の場所は、次のコマンドで確認できます。
+
+```powershell
+py --list-paths
+```
+
+なお、複数のバージョンが入っている場合は **3.12 → 3.13 → 3.11** の順に優先して選びます。
+3.14 のような新しすぎるバージョンは、文字起こしライブラリ（torch など）の対応が
+追いついていないことがあるためです。
+
+</details>
+
+<details>
 <summary><b>ライブラリのインストールで止まる・失敗する</b></summary>
 
 インターネット接続をご確認のうえ、もう一度 `install.ps1` を実行してください。
