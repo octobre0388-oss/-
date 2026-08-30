@@ -90,6 +90,24 @@ def test_SRTは長い行を折り返す():
     assert "\n" in body.strip()
 
 
+def test_SRTは3行以上にならない():
+    content = render_srt([OutputSegment(0, 5, "あ" * 200)])
+    body = content.split("\n", 2)[2].strip()
+    assert len(body.splitlines()) == 2
+
+
+@pytest.mark.parametrize("禁則文字", ["ー", "、", "。", "っ", "」", "）"])
+def test_禁則文字は行頭に来ない(禁則文字: str):
+    """「3ペー / ジ目」のような読みにくい折り返しを避けること。"""
+    from transcribe_ja.writers import _wrap_subtitle
+
+    text = "あ" * 19 + 禁則文字 + "い" * 20
+    lines = _wrap_subtitle(text).splitlines()
+    assert len(lines) >= 2
+    for line in lines[1:]:
+        assert line[0] not in "ーぁぃぅぇぉっゃゅょ、。」）"
+
+
 # --- txt / md ---------------------------------------------------------------
 
 

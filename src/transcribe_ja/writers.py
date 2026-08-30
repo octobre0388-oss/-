@@ -181,17 +181,32 @@ def render_txt(
     return "\n".join(lines).rstrip() + "\n"
 
 
+#: 行頭に置いてはいけない文字（日本語組版の禁則処理）。
+#: これらが行頭に来ると「3ペー / ジ目」のように読みにくくなる。
+LINE_HEAD_FORBIDDEN = "ーぁぃぅぇぉっゃゅょャュョッ、。，．・？！」』）】〕》"
+
+
+def _apply_kinsoku(lines: list[str]) -> list[str]:
+    """行頭に来てはいけない文字を、前の行の末尾へ送る。"""
+    fixed = list(lines)
+    for index in range(1, len(fixed)):
+        while fixed[index] and fixed[index][0] in LINE_HEAD_FORBIDDEN and fixed[index - 1]:
+            fixed[index - 1] += fixed[index][0]
+            fixed[index] = fixed[index][1:]
+    return [line for line in fixed if line]
+
+
 def _wrap_subtitle(text: str, width: int = SRT_LINE_CHARS, max_lines: int = 2) -> str:
     """字幕らしく短い行に折り返す。長すぎる場合は 2 行に収める。"""
     text = text.strip()
     if len(text) <= width:
         return text
     wrapped = textwrap.wrap(text, width=width)
-    if len(wrapped) <= max_lines:
-        return "\n".join(wrapped)
-    # 3 行以上になる場合は、2 行に均等分割する（字幕は 2 行までが読みやすい）
-    half = (len(text) + 1) // 2
-    return f"{text[:half]}\n{text[half:]}"
+    if len(wrapped) > max_lines:
+        # 3 行以上になる場合は、2 行に均等分割する（字幕は 2 行までが読みやすい）
+        half = (len(text) + 1) // 2
+        wrapped = [text[:half], text[half:]]
+    return "\n".join(_apply_kinsoku(wrapped))
 
 
 def render_srt(segments: Sequence[OutputSegment]) -> str:
