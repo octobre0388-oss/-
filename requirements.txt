@@ -1,0 +1,29 @@
+# TranscribeJA が必要とするライブラリ
+#
+# install.ps1 がこのファイルを使って自動でインストールします。
+# 手動で入れる場合は次のコマンドを実行してください。
+#     python -m pip install -r requirements.txt
+
+# --- 必須 -------------------------------------------------------------
+# 文字起こし本体（本家 whisper より高速・省メモリ、単語単位の時刻も取得できる）
+faster-whisper>=1.0.3
+
+# 音声データの配列操作（無音カットの切り貼り、音量計算）
+numpy>=1.24
+
+# 発話区間検出。BGM や空調音がある素材でも人の声を見分けられる
+silero-vad>=5.1
+
+# Silero VAD の実行基盤
+# ※ GPU を使う場合は install.ps1 が CUDA 版に入れ替えます
+torch>=2.1
+
+# Windows のトースト通知（クリックで出力フォルダを開く）
+winotify>=1.1 ; sys_platform == 'win32'
+
+# --- 任意（無くても動きます） -----------------------------------------
+# 雑談カットを AI に判定させる場合（環境変数 ANTHROPIC_API_KEY が必要）
+anthropic>=0.40
+
+# Silero VAD が動かない環境での代替
+webrtcvad-wheels>=2.0.14 ; sys_platform == 'win32'

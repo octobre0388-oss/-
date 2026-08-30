@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# 仮想環境（install.ps1 が作成する）
+.venv/
+
+# 同梱 ffmpeg（install.ps1 が配置するのでコミットしない）
+tools/*
+!tools/.gitkeep
+
+# 作業用
+*.log

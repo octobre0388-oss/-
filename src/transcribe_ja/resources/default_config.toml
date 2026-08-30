@@ -1,0 +1,182 @@
+# =====================================================================
+#  TranscribeJA 設定ファイル
+#
+#  このファイルを書き換えると動作を変更できます。
+#  書き換えたあとは保存するだけで、次回の文字起こしから反映されます。
+#  おかしくなったらこのファイルを削除してください。次回起動時に
+#  既定値で作り直されます。
+#
+#  ※ 文字コードは UTF-8 のまま保存してください（メモ帳の既定で大丈夫です）
+# =====================================================================
+
+[general]
+# 文字起こしの言語。日本語版なので "ja" 固定を推奨します。
+language = "ja"
+
+# true にすると一時ファイル（抽出した wav など）を削除せずに残します。
+# うまく動かないときの調査用です。普段は false のままで構いません。
+keep_temp = false
+
+# ログの詳しさ。"DEBUG" / "INFO" / "WARNING" / "ERROR"
+log_level = "INFO"
+
+
+[output]
+# 出力するファイルの種類。要らないものは行から削ってください。
+#   "txt"     … 整形済みの読みやすい本文
+#   "srt"     … 字幕ファイル（元動画のタイムコード基準）
+#   "md"      … タイムスタンプ付きの見出し構成
+#   "cut_log" … カットした区間の記録
+formats = ["txt", "srt", "md", "cut_log"]
+
+# 出力ファイル名に付ける接尾辞。"会議.mp4" → "会議_ja.txt"
+suffix = "_ja"
+
+# 完了通知をクリックしたときに出力先フォルダを開くか
+open_folder_when_done = true
+
+
+[audio]
+# 音声トラックが複数ある動画で、何本目を使うか（1 が先頭）
+track = 1
+
+# ラウドネス正規化の方式。"loudnorm" / "dynaudnorm" / "none"
+#   loudnorm    … 放送基準の正規化。もっとも自然（推奨）
+#   dynaudnorm  … 音量差が激しい素材向け。小声も持ち上がる
+#   none        … 正規化しない
+normalize = "loudnorm"
+
+
+[vad]
+# 無音カットを行うか
+enabled = true
+
+# 発話区間の検出方式。"silero"（推奨）/ "webrtc"（軽量）
+engine = "silero"
+
+# これより短い無音は切り取らない（ミリ秒）。
+# 値を小さくするとテンポよく詰まりますが、不自然になりがちです。
+min_silence_ms = 700
+
+# 発話区間の前後に残す余白（ミリ秒）。語頭・語尾の欠けを防ぎます。
+padding_ms = 200
+
+# 発話とみなす感度（0.0〜1.0）。小さいほど拾いやすくなります。
+# BGM や空調音を発話と誤検出する場合は 0.6〜0.7 に上げてください。
+threshold = 0.5
+
+# これより短い発話は雑音とみなして捨てる（ミリ秒）
+min_speech_ms = 250
+
+
+[chatter]
+# 不要な雑談部分のカットを行うか。
+# false にすると無音カットだけになり、処理も速くなります。
+enabled = true
+
+# 判定方式。"rules"（既定・オフライン）/ "llm"（Anthropic API を使用）
+# "llm" でも環境変数 ANTHROPIC_API_KEY が未設定なら自動で "rules" に切り替わります。
+method = "rules"
+
+# 下読み（1 パス目）に使うモデル。"tiny" / "base" / "small" / "medium"
+prescan_model = "small"
+
+# 判定の安全度。
+#   "conservative" … 迷ったら残す（既定・推奨）
+#   "balanced"     … 標準
+#   "aggressive"   … 迷ったら切る（切りすぎに注意）
+safety = "conservative"
+
+# 安全弁: 雑談カットで削る割合の上限。これを超える分はカットしません。
+# 誤判定で本編が丸ごと消える事故を防ぎます（0.0〜1.0）。
+max_cut_ratio = 0.35
+
+# LLM 判定に使うモデル
+llm_model = "claude-opus-5"
+
+# 判定辞書ファイル（このフォルダの dictionaries\ の中にあります）。
+# 表現を追加・削除して判定を調整できます。
+rules_file = "chatter_ja.toml"
+
+
+[whisper]
+# 文字起こしモデル。
+#   "auto"     … GPU があれば large-v3、無ければ medium を自動選択（推奨）
+#   "large-v3" … 最高精度。GPU 推奨（CPU では非常に時間がかかります）
+#   "medium" / "small" / "base" / "tiny" … 軽い順
+model = "auto"
+
+# 計算に使う装置。"auto" / "cuda" / "cpu"
+device = "auto"
+
+# 計算精度。"auto" のままで構いません。
+# （GPU なら float16、CPU なら int8 が選ばれます）
+compute_type = "auto"
+
+# 探索の幅。大きいほど精度が上がり遅くなります。
+beam_size = 5
+
+# 句読点付きの出力を促すための例文。日本語の書き言葉の見本を与えます。
+initial_prompt = "以下は日本語の会議の書き起こしです。適切に句読点を付けます。本日はお集まりいただき、ありがとうございます。まず、資料の三ページ目をご覧ください。"
+
+# 無音部分での幻覚（実際には話していない文章の出力）を抑える設定。
+# 値を上げるほど「無音」と判断されやすくなります。
+no_speech_threshold = 0.6
+log_prob_threshold = -1.0
+compression_ratio_threshold = 2.4
+
+# モデルの保存先。空欄なら既定の場所（%USERPROFILE%\.cache\huggingface）に置かれます。
+model_dir = ""
+
+
+[format]
+# 「えー」「あのー」などのフィラーを取り除くか
+remove_fillers = true
+
+# フィラー辞書ファイル（dictionaries\ の中）
+fillers_file = "fillers_ja.toml"
+
+# 英数字を半角に、記号を日本語組版に合わせて統一するか
+normalize_width = true
+
+# 数字の表記。"arabic"（算用数字: 3個）/ "kanji"（漢数字: 三個）/ "keep"（変換しない）
+numbers = "arabic"
+
+# 「これは、これはですね」→「これはですね」のような言い直しを整理するか
+fix_restatements = true
+
+# 句読点の整形（重複した句読点の除去、文末の句点補完など）
+fix_punctuation = true
+
+# txt 出力で 1 行あたりの目安文字数。0 なら折り返しません。
+line_width = 0
+
+
+[diarization]
+# 話者分離（誰が話したかの区別）。
+# 使うには追加のインストールが必要です。README の「話者分離を使う」をご覧ください。
+enabled = false
+
+# 使用するモデル
+model = "pyannote/speaker-diarization-3.1"
+
+# Hugging Face のアクセストークンを入れた環境変数の名前。
+# トークン自体はここに書かず、Windows の環境変数に設定してください。
+token_env = "HUGGINGFACE_TOKEN"
+
+
+[advanced]
+# ffmpeg / ffprobe の場所を手動で指定したい場合に絶対パスを書きます。
+# 空欄なら 同梱の tools フォルダ → PATH の順に自動で探します。
+ffmpeg_path = ""
+ffprobe_path = ""
+
+# 複数ファイルを選択したときに、後続の選択を待つ秒数。
+# 大量のファイルを一度に選ぶと取りこぼす場合は少し増やしてください。
+queue_debounce_seconds = 1.5
+
+# 進捗ウィンドウを表示するか（false にすると画面に何も出ません）
+show_progress_window = true
+
+# 完了時に Windows の通知を出すか
+show_notification = true

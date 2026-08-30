@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "transcribe-ja"
+version = "1.0.0"
+description = "Windows のエクスプローラーの右クリックから使える日本語文字起こしツール"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+dependencies = [
+  # 文字起こし本体。本家 whisper より高速・省メモリで、単語単位の時刻も取れる
+  "faster-whisper>=1.0.3",
+  # 音声データの配列操作（切り貼り・音量計算）
+  "numpy>=1.24",
+  # 発話区間検出。BGM や空調音がある素材でも人の声を見分けられる
+  "silero-vad>=5.1",
+  # Silero VAD の実行基盤（CPU 版でも動く）
+  "torch>=2.1",
+  # Windows のトースト通知
+  "winotify>=1.1 ; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+# 雑談カットを AI に判定させる場合に必要（環境変数 ANTHROPIC_API_KEY も必要）
+llm = ["anthropic>=0.40"]
+# Silero VAD が使えない環境での代替（軽量な発話区間検出）
+webrtc = ["webrtcvad-wheels>=2.0.14"]
+# 話者分離（誰が話したかの区別）。Hugging Face のトークンが必要
+diarize = ["pyannote.audio>=3.1"]
+# 開発・テスト用
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+transcribe-ja = "transcribe_ja.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+transcribe_ja = ["resources/*.toml", "chatter/dictionaries/*.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
