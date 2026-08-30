@@ -69,9 +69,25 @@ def test_メニュー表示名がPython側と一致する(path: Path):
 
 
 def test_登録先はHKCUで管理者権限が不要():
+    """右クリックメニューの登録は HKCU にのみ書き込むこと。
+
+    HKLM への書き込みには管理者権限が必要になってしまう。
+    （Python の場所を調べるための HKLM の「読み取り」は権限不要なので問題ない）
+    """
     text = _read(INSTALL)
     assert "HKCU:\\Software\\Classes\\SystemFileAssociations" in text
-    assert "HKLM" not in text, "管理者権限が必要な HKLM を使ってはいけない"
+
+    # レジストリに書き込むコマンドの行に HKLM が出てこないこと
+    writers = ("New-Item", "Set-ItemProperty", "New-ItemProperty", "reg add", "Remove-Item")
+    for line in text.splitlines():
+        if any(w in line for w in writers) and "HKLM" in line:
+            raise AssertionError(f"HKLM へ書き込もうとしている: {line.strip()}")
+
+    # HKLM が登場するのは読み取り専用の用途だけであること
+    readers = ("Test-Path", "Get-ChildItem", "Get-Item", "$hive", "'HKLM:'")
+    for line in text.splitlines():
+        if "HKLM" in line:
+            assert any(r in line for r in readers), f"HKLM の使い方が不明: {line.strip()}"
 
 
 def test_アンインストールはキーごと削除する():

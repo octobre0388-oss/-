@@ -111,19 +111,89 @@ Write-Host "  インストール先: $Root"
 
 Write-Step 'Python を探しています'
 
+# Python の探索は、PATH だけに頼らず次の 4 通りで行う。
+# PATH に入れずにインストールしている人が多いため、ここを厚くしないと
+# 「入っているのに見つからない」という分かりにくい失敗になる。
+#
+#   1. py ランチャーが把握している一覧（py -0p）
+#   2. PATH 上の python / python3
+#   3. レジストリ（Python の公式インストーラが登録する）
+#   4. よくあるインストール先のフォルダ
+
+$script:StoreStubFound = $false
+
+function Test-StoreStub {
+    param([string]$Path)
+    # Microsoft Store の「アプリ実行エイリアス」は、Python 本体ではなく
+    # ストアを開くだけの 0 バイトのダミー。これを Python と誤認しないようにする。
+    if ($Path -like '*\WindowsApps\*') { return $true }
+    try {
+        if ((Get-Item $Path -Force -ErrorAction Stop).Length -eq 0) { return $true }
+    } catch { }
+    return $false
+}
+
 function Get-PythonCandidates {
-    $found = New-Object System.Collections.Generic.List[string]
-    # py ランチャー（Windows の標準的な入り方）を優先する
+    # 重複を除きつつ順序を保つ
+    $found = New-Object System.Collections.Specialized.OrderedDictionary
+
+    function Add-Candidate {
+        param([string]$Value)
+        if ($Value -and -not $found.Contains($Value)) { $found.Add($Value, $true) }
+    }
+
+    # --- 1. py ランチャー ---
     if (Get-Command 'py' -ErrorAction SilentlyContinue) {
-        foreach ($v in @('-3.13', '-3.12', '-3.11', '-3')) {
-            $found.Add("py $v")
+        try {
+            foreach ($line in (& py -0p 2>$null)) {
+                if ("$line" -match '([A-Za-z]:\\[^\r\n]*?python\.exe)') {
+                    Add-Candidate $matches[1]
+                }
+            }
+        } catch { }
+        foreach ($v in @('-3.13', '-3.12', '-3.11', '-3')) { Add-Candidate "py $v" }
+    }
+
+    # --- 2. PATH 上（ストアのダミーは除く） ---
+    foreach ($name in @('python', 'python3')) {
+        foreach ($cmd in @(Get-Command $name -All -ErrorAction SilentlyContinue)) {
+            if (-not $cmd.Source) { continue }
+            if (Test-StoreStub $cmd.Source) {
+                $script:StoreStubFound = $true
+                continue
+            }
+            Add-Candidate $cmd.Source
         }
     }
-    foreach ($name in @('python', 'python3')) {
-        $cmd = Get-Command $name -ErrorAction SilentlyContinue
-        if ($cmd) { $found.Add($cmd.Source) }
+
+    # --- 3. レジストリ ---
+    foreach ($hive in @('HKCU:', 'HKLM:')) {
+        foreach ($view in @('\Software\Python\PythonCore', '\Software\Wow6432Node\Python\PythonCore')) {
+            $base = "$hive$view"
+            if (-not (Test-Path $base)) { continue }
+            foreach ($key in (Get-ChildItem $base -ErrorAction SilentlyContinue)) {
+                try {
+                    $installPath = (Get-Item "$($key.PSPath)\InstallPath" -ErrorAction Stop).GetValue('')
+                    if ($installPath) { Add-Candidate (Join-Path $installPath 'python.exe') }
+                } catch { }
+            }
+        }
     }
-    return $found
+
+    # --- 4. よくあるインストール先 ---
+    $patterns = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3*\python.exe'),
+        'C:\Python3*\python.exe',
+        (Join-Path $env:ProgramFiles 'Python3*\python.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python3*\Scripts\..\python.exe')
+    )
+    foreach ($pattern in $patterns) {
+        foreach ($item in (Get-ChildItem $pattern -ErrorAction SilentlyContinue)) {
+            Add-Candidate $item.FullName
+        }
+    }
+
+    return @($found.Keys)
 }
 
 function Test-PythonVersion {
@@ -131,12 +201,18 @@ function Test-PythonVersion {
     try {
         $parts = $Invocation -split ' ', 2
         $exe = $parts[0]
+        if ($parts.Count -eq 1 -and (Test-Path $exe) -and (Test-StoreStub $exe)) {
+            $script:StoreStubFound = $true
+            return $null
+        }
         $script = 'import sys;print("%d.%d"%sys.version_info[:2])'
         # $args は PowerShell の自動変数なので、別名を使う
         $cmdArgs = if ($parts.Count -gt 1) { @($parts[1], '-c', $script) } else { @('-c', $script) }
         $out = & $exe @cmdArgs 2>$null
         if ($LASTEXITCODE -ne 0 -or -not $out) { return $null }
-        $version = [version]$out.Trim()
+        # 出力が複数行になることがあるので、最後の行だけを見る
+        $line = (@($out) | Where-Object { "$_".Trim() } | Select-Object -Last 1)
+        $version = [version]("$line".Trim())
         if ($version -ge [version]'3.11') { return $version }
         return $null
     } catch {
@@ -146,7 +222,10 @@ function Test-PythonVersion {
 
 $PythonCommand = $null
 $PythonVersion = $null
+$Checked = @()
+
 foreach ($candidate in Get-PythonCandidates) {
+    $Checked += $candidate
     $v = Test-PythonVersion $candidate
     if ($v) {
         $PythonCommand = $candidate
@@ -156,16 +235,47 @@ foreach ($candidate in Get-PythonCandidates) {
 }
 
 if (-not $PythonCommand) {
+    $detail = ''
+    if ($Checked.Count -gt 0) {
+        $detail = "`n次の場所を調べましたが、3.11 以上の Python はありませんでした:`n" +
+                  (($Checked | ForEach-Object { "  ・$_" }) -join "`n")
+    } else {
+        $detail = "`nこのパソコンからは Python が 1 つも見つかりませんでした。"
+    }
+
+    $storeNote = ''
+    if ($script:StoreStubFound) {
+        $storeNote = @"
+
+【重要】
+「python」というコマンドは見つかりましたが、これは Microsoft Store を開くだけの
+ダミーで、Python 本体ではありません。下の手順でインストールしてください。
+（コマンド プロンプトで python と打つとストアが開くのは、この仕組みのためです）
+"@
+    }
+
     Exit-WithError `
-        "Python 3.11 以上が見つかりませんでした。" `
+        "Python 3.11 以上が見つかりませんでした。$detail" `
         @"
-Microsoft Store または python.org から Python をインストールしてください。
+Python をインストールしてください。おすすめは Microsoft Store 版です。
 
-  ・Microsoft Store で「Python 3.12」を検索してインストール（管理者権限不要）
-  ・または https://www.python.org/downloads/windows/ からダウンロード
-    ※ インストール時に「Add python.exe to PATH」にチェックを入れてください
+■ 方法A: Microsoft Store（かんたん・管理者権限不要）
+   1. Windows キーを押して「Microsoft Store」と入力し、ストアを開く
+   2. 検索欄に「Python 3.12」と入力する
+   3. 「Python 3.12」（発行元: Python Software Foundation）を選び「入手」
+   4. インストールが終わったら、この PowerShell の窓を一度閉じる
 
-インストール後、この install.ps1 をもう一度実行してください。
+■ 方法B: python.org
+   1. https://www.python.org/downloads/windows/ を開く
+   2. 「Latest Python 3 Release」→ ページ下部の
+      「Windows installer (64-bit)」をダウンロード
+   3. 実行し、最初の画面で
+      ★「Add python.exe to PATH」に必ずチェックを入れてから★
+      「Install Now」をクリック
+$storeNote
+インストールが終わったら、PowerShell を開き直してから
+install.ps1 をもう一度実行してください。
+（開いたままだと、新しくインストールした Python が認識されません）
 "@
 }
 Write-Ok "Python $PythonVersion を使います（$PythonCommand）"
