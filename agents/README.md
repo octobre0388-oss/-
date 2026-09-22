@@ -8,7 +8,10 @@
 | `blog-terminology.md` | 用語・表記選定 | 下書き後、推敲前 |
 | `blog-editor.md` | ブラッシュアップ | 下書きの推敲 |
 | `blog-opener.md` | 冒頭 | 本文確定後。タイトルとリード |
+| `proofreader.md` | 校正 | 最終形に近づいた段階 |
 | `blog-factchecker.md` | ファクトチェック | 公開前の最終確認 |
+
+`proofreader` は文字起こしの校正にも使う。役割の境界は次のとおり。構成と論旨は `blog-editor`、用語の選定そのものは `blog-terminology`、選ばれた表記が守られているかと誤字脱字は `proofreader` が見る。
 
 ## 設置
 
@@ -33,7 +36,8 @@ Claude Code に次のように頼むと、順番に各担当へ仕事が振ら�
 3. blog-terminology で用語点検
 4. blog-editor で整える
 5. blog-opener でタイトルとリード
-6. 最後に blog-factchecker で検証
+6. proofreader で校正
+7. 最後に blog-factchecker で検証
 各段階で結果を見せて、確認を待ってから次へ進んで。
 ```
 
